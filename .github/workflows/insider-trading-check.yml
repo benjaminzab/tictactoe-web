@@ -1,0 +1,37 @@
+name: Insider Trading Check
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r insider-trading-bot/requirements.txt
+
+      - name: Check filings and notify
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: python insider-trading-bot/check_filings.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- insider-trading-bot/state.json; then
+            git add insider-trading-bot/state.json
+            git commit -m "Update insider trading bot state"
+            git push
+          fi

@@ -176,7 +176,6 @@ def check_company(company_name, cik, ticker, seen_accessions):
         accession = filing["accession"]
         if accession in seen_accessions:
             continue
-        newly_seen.append(accession)
 
         xml_url = find_ownership_xml_url(cik, accession)
         if xml_url is None:
@@ -187,6 +186,7 @@ def check_company(company_name, cik, ticker, seen_accessions):
         if not title_matches(officer_title) or not transactions:
             continue
 
+        newly_seen.append(accession)
         for tx in transactions:
             new_notifications.append({
                 "company": company_name,

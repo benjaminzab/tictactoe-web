@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -21,6 +22,11 @@ STATE_PATH = Path(__file__).parent / "state.json"
 NOTIFY_EMAIL = "benjamin.472006@gmail.com"
 RESEND_API_URL = "https://api.resend.com/emails"
 ATOM_NS = {"a": "http://www.w3.org/2005/Atom"}
+
+# When no qualifying transactions are found, send a "still watching" email
+# at most this often, so the absence of alerts doesn't get mistaken for the
+# bot being broken. Tracked as an ISO timestamp under state["_last_heartbeat"].
+HEARTBEAT_INTERVAL = timedelta(days=7)
 
 COMPANIES = {
     "Nvidia": {"cik": "1045810", "ticker": "NVDA"},
@@ -149,24 +155,55 @@ def format_email_body(notifications):
     return "\n".join(lines)
 
 
-def send_email(notifications):
+def send_resend_email(subject, body_text):
     api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
         print("RESEND_API_KEY not set; skipping email send.", file=sys.stderr)
-        return
-    body_text = format_email_body(notifications)
+        return False
     resp = requests.post(
         RESEND_API_URL,
         headers={"Authorization": f"Bearer {api_key}"},
         json={
             "from": "Insider Trading Bot <onboarding@resend.dev>",
             "to": [NOTIFY_EMAIL],
-            "subject": f"Insider Trade Alert: {len(notifications)} new filing(s)",
+            "subject": subject,
             "text": body_text,
         },
         timeout=30,
     )
     resp.raise_for_status()
+    return True
+
+
+def send_email(notifications):
+    body_text = format_email_body(notifications)
+    subject = f"Insider Trade Alert: {len(notifications)} new filing(s)"
+    if send_resend_email(subject, body_text):
+        print(f"Email sent: {subject}")
+
+
+def send_heartbeat_email(companies_checked):
+    subject = "Insider Trading Bot: still watching, no new filings"
+    body_text = (
+        f"No new qualifying insider transactions this week across "
+        f"{companies_checked} tracked companies. The bot is running on "
+        f"schedule; this is just a periodic confirmation that it's alive.\n"
+    )
+    sent = send_resend_email(subject, body_text)
+    if sent:
+        print(f"Heartbeat email sent: {subject}")
+    return sent
+
+
+def heartbeat_due(state):
+    last = state.get("_last_heartbeat")
+    if not last:
+        return True
+    try:
+        last_dt = datetime.fromisoformat(last)
+    except ValueError:
+        return True
+    return datetime.now(timezone.utc) - last_dt >= HEARTBEAT_INTERVAL
 
 
 def check_company(company_name, cik, ticker, seen_accessions):
@@ -221,6 +258,9 @@ def main():
             send_email(all_notifications)
     else:
         print("No new qualifying insider transactions found.")
+        if not dry_run and heartbeat_due(state):
+            if send_heartbeat_email(len(COMPANIES)):
+                state["_last_heartbeat"] = datetime.now(timezone.utc).isoformat()
 
     if not dry_run:
         save_state(state)

@@ -7,6 +7,12 @@ VP, President, or Chairman at Nvidia, Amazon, SolarEdge, or Digi Power X.
 When one is found, it emails the details (date, shares, price, total
 dollar value) to benjamin.472006@gmail.com via [Resend](https://resend.com).
 
+If a run finds nothing to report and it's been 7+ days since the last such
+email, it also sends a short "still watching, no new filings" heartbeat —
+so weeks of silence read as "nothing happened" rather than "is this even
+running?". The last heartbeat time is tracked in `state.json` under
+`_last_heartbeat`.
+
 ## One-time setup
 
 1. **Sign up for Resend** at https://resend.com using
